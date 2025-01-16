@@ -1,6 +1,16 @@
 -- Version: Lua 5.3.5
 
 
+---@param text string
+---@return integer|nil value
+local function toInteger(text)
+    local number = tonumber(text)
+    if number and math.floor(number) == number then
+        return number
+    end
+    return nil
+end
+
 -------------------------------------------- TCP  --------------------------------------------
 
 
@@ -73,8 +83,35 @@ end
 
 -------------------------------------------- Movement  --------------------------------------------
 
+_MAX_PIECES = {
+    [-1] = 2,  -- white rook
+    [-2] = 2,  -- white bishop
+    [-3] = 2,  -- white knight
+    [-4] = 1,  -- white queen
+    [-5] = 1,  -- white king
+    [-6] = 8,  -- white pawn
+    [-7] = 2,  -- black rook
+    [-8] = 2,  -- black bishop
+    [-9] = 2,  -- black knight
+    [-10] = 1, -- black queen
+    [-11] = 1, -- black king
+    [-12] = 8  -- black pawn
+}
 
--- TODO: Shelved pieces counter
+_CAPTURED_PIECES_COUNT = {
+    [-1] = 0,  -- white rook
+    [-2] = 0,  -- white bishop
+    [-3] = 0,  -- white knight
+    [-4] = 0,  -- white queen
+    [-5] = 0,  -- white king
+    [-6] = 0,  -- white pawn
+    [-7] = 0,  -- black rook
+    [-8] = 0,  -- black bishop
+    [-9] = 0,  -- black knight
+    [-10] = 0, -- black queen
+    [-11] = 0, -- black king
+    [-12] = 0  -- black pawn
+}
 
 ---@param square integer
 ---@return Coordinate coordinate
@@ -92,7 +129,67 @@ end
 
 ---@param originCoord Coordinate
 ---@param targetCoord Coordinate
-local function movePiece(originCoord, targetCoord)
+---@return integer error
+local function relocate(originCoord, targetCoord)
+end
+
+
+---@param originSquare integer
+---@param offsetX integer
+---@param offsetY integer
+---@param targetSquare integer
+---@return integer error
+local function movePiece(originSquare, offsetX, offsetY, targetSquare)
+    -- Validation
+    if _CAPTURED_PIECES_COUNT[originSquare] ~= nil then
+        local count = _CAPTURED_PIECES_COUNT[originSquare]
+        if count == 0 then
+            return 1
+        end
+    end
+
+    if _CAPTURED_PIECES_COUNT[targetSquare] ~= nil then
+        local count = _CAPTURED_PIECES_COUNT[targetSquare]
+        if (count + 1) > _MAX_PIECES[targetSquare] then
+            return 2
+        end
+    end
+
+    -- Movement
+    local originCoord = offsetCoord(squareToCoord(originSquare), offsetX, offsetY)
+    local targetCoord = squareToCoord(targetSquare)
+
+    local err = relocate(originCoord, targetCoord)
+    if err ~= 0 then
+        return 3
+    end
+
+    -- Update
+    if _CAPTURED_PIECES_COUNT[originSquare] ~= nil then
+        local count = _CAPTURED_PIECES_COUNT[originSquare]
+        _CAPTURED_PIECES_COUNT[originSquare] = count - 1
+    end
+
+    if _CAPTURED_PIECES_COUNT[targetSquare] ~= nil then
+        local count = _CAPTURED_PIECES_COUNT[targetSquare]
+        _CAPTURED_PIECES_COUNT[targetSquare] = count + 1
+    end
+
+    return 0
+end
+
+
+local function resetCapturedPieces()
+    for key in pairs(_CAPTURED_PIECES_COUNT) do
+        _CAPTURED_PIECES_COUNT[key] = 0
+    end
+end
+
+
+---@param square integer
+---@return boolean validity
+local function isValidSquare(square)
+    return (square >= 0 and square <= 63) or _MAX_PIECES[square] ~= nil
 end
 
 
@@ -122,25 +219,33 @@ end
 ---@return integer targetSquare
 local function parseMoveArgs(args)
     if #args ~= 4 then
-        return 1
+        return 1, 0, 0, 0, 0
     end
 
-    local originSquare = tonumber(args[1])
-    local offsetX = tonumber(args[2])
-    local offsetY = tonumber(args[3])
-    local targetSquare = tonumber(args[4])
+    local originSquare = toInteger(args[1])
+    local offsetX = toInteger(args[2])
+    local offsetY = toInteger(args[3])
+    local targetSquare = toInteger(args[4])
 
-    -- TODO: Validate arguments
+    if not (originSquare and offsetX and offsetY and targetSquare) then
+        return 1, 0, 0, 0, 0
+    end
 
-    return 0
+    if not (isValidSquare(originSquare) and isValidSquare(targetSquare)) then
+        return 1, 0, 0, 0, 0
+    end
+
+    if not (math.abs(offsetX) <= 100 and math.abs(offsetY) <= 100) then
+        return 1, 0, 0, 0, 0
+    end
+
+    return 0, originSquare, offsetX, offsetY, targetSquare
 end
 
 
 ---@param command string
 ---@return integer error
 local function executeCommand(command)
-    -- TODO: Pass context for counting pieces locations
-
     local operation, args = parseArgs(command)
 
     if operation == "move" then
@@ -149,16 +254,17 @@ local function executeCommand(command)
             return err
         end
 
-        local originCoord = offsetCoord(squareToCoord(originSquare), offsetX, offsetY)
-        local targetCoord = squareToCoord(targetSquare)
-
-        movePiece(originCoord, targetCoord)
+        return movePiece(originSquare, offsetX, offsetY, targetSquare)
     elseif operation == "reset" then
-
+        resetCapturedPieces()
+        return 0
     end
 
     return 1
 end
+
+
+-------------------------------------------- Main  --------------------------------------------
 
 
 local function main()
