@@ -113,6 +113,8 @@ _CAPTURED_PIECES_COUNT = {
     [-12] = 0  -- black pawn
 }
 
+-- TODO: Merge both of these functions into one?
+
 ---@param square integer
 ---@return Coordinate coordinate
 local function squareToCoord(square)
