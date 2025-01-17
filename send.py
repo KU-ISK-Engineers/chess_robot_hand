@@ -38,4 +38,3 @@ if __name__ == "__main__":
     client_socket = connect_tcp(args.ip, args.port)
     if client_socket:
         send_tcp_command(client_socket, args.command)
-        send_tcp_command(client_socket, args.command)
