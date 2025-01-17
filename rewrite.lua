@@ -18,7 +18,7 @@ local TCPServerIP = "192.168.1.6"
 local TCPServerPort = 6001
 
 ---@type Socket|nil
-_SOCKET = nil
+local _SOCKET = nil
 
 
 local function connectTCP()
@@ -83,7 +83,7 @@ end
 
 -------------------------------------------- Movement  --------------------------------------------
 
-_MAX_PIECES = {
+local _MAX_PIECES = {
     [-1] = 2,  -- white rook
     [-2] = 2,  -- white bishop
     [-3] = 2,  -- white knight
@@ -98,7 +98,7 @@ _MAX_PIECES = {
     [-12] = 8  -- black pawn
 }
 
-_CAPTURED_PIECES_COUNT = {
+local _CAPTURED_PIECES_COUNT = {
     [-1] = 0,  -- white rook
     [-2] = 0,  -- white bishop
     [-3] = 0,  -- white knight
@@ -141,6 +141,7 @@ local function movePiece(originSquare, offsetX, offsetY, targetSquare)
     if _CAPTURED_PIECES_COUNT[originSquare] ~= nil then
         local count = _CAPTURED_PIECES_COUNT[originSquare]
         if count == 0 then
+            print("Move - Origin square not enough pieces " .. originSquare)
             return 1
         end
     end
@@ -148,6 +149,7 @@ local function movePiece(originSquare, offsetX, offsetY, targetSquare)
     if _CAPTURED_PIECES_COUNT[targetSquare] ~= nil then
         local count = _CAPTURED_PIECES_COUNT[targetSquare]
         if (count + 1) > _MAX_PIECES[targetSquare] then
+            print("Move - Target square cannot exceed maximum pieces " .. targetSquare)
             return 2
         end
     end
