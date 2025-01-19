@@ -158,7 +158,7 @@ end
 
 
 ---@param originSquare integer
----@param offset Point2D
+---@param offset Point2D offsets in range [-1..1]
 ---@param targetSquare integer
 ---@return integer error
 local function movePiece(originSquare, offset, targetSquare)
@@ -236,8 +236,8 @@ end
 ---@param args string[]
 ---@return integer error
 ---@return integer originSquare
----@return integer offsetX
----@return integer offsetY
+---@return number offsetX offset X in range of [-1,1]
+---@return number offsetY offset Y in range of [-1,1]
 ---@return integer targetSquare
 local function parseMoveArgs(args)
     if #args ~= 4 then
@@ -265,7 +265,7 @@ local function parseMoveArgs(args)
         return 1, 0, 0, 0, 0
     end
 
-    return 0, originSquare, offsetX, offsetY, targetSquare
+    return 0, originSquare, offsetX / 100, offsetY / 100, targetSquare
 end
 
 
