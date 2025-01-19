@@ -54,11 +54,11 @@ OFF = false
 
 --- Settings for jump motion parameters such as speed, acceleration, and height constraints.
 ---@class JumpSettings
----@field SpeedL number Velocity rate. Controls the motion speed. Value range: 1-100. Default: 50.
----@field AccL number Acceleration rate. Controls the motion acceleration. Value range: 1-100. Default: 20.
----@field Start number Lifting height (h1). The height at which the jump starts. Default: 10.
----@field ZLimit number Maximum lifting height (z_limit). The highest point of the jump. Default: 100.
----@field End number Dropping height (h2). The height at which the jump ends. Default: 20.
+---@field SpeedL number|nil Velocity rate. Controls the motion speed. Value range: 1-100. Default: 50.
+---@field AccL number|nil Acceleration rate. Controls the motion acceleration. Value range: 1-100. Default: 20.
+---@field Start number|nil Lifting height (h1). The height at which the jump starts. Default: 10.
+---@field ZLimit number|nil Maximum lifting height (z_limit). The highest point of the jump. Default: 100.
+---@field End number|nil Dropping height (h2). The height at which the jump ends. Default: 20.
 
 
 --- Performs a point-to-point movement to a specified Cartesian target point.

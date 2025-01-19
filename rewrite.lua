@@ -1,16 +1,5 @@
 -- Version: Lua 5.3.5
 
-
----@param text string
----@return integer|nil value
-local function toInteger(text)
-    local number = tonumber(text)
-    if number and math.floor(number) == number then
-        return number
-    end
-    return nil
-end
-
 -------------------------------------------- TCP  --------------------------------------------
 
 
@@ -80,119 +69,221 @@ local function sendTCPResponse(response)
     return err
 end
 
+-------------------------------------------- Coordinates  --------------------------------------------
+
+---@param origin Point2D
+---@param square_distance Point2D
+---@param angle_rad number
+local function transform2d(origin, square_distance, angle_rad)
+    local angle_sin = math.sin(angle_rad)
+    local angle_cos = math.cos(angle_rad)
+
+    ---@param row integer
+    ---@param col integer
+    ---@param center_offset Point2D
+    ---@return Point2D coord
+    return function(row, col, center_offset)
+        local local_x = col * square_distance[1]
+        local local_y = row * square_distance[2]
+
+        local_x = local_x + center_offset[1] * (square_distance[1] / 2)
+        local_y = local_y + center_offset[2] * (square_distance[2] / 2)
+
+        local rotated_x = local_x * angle_cos - local_y * angle_sin
+        local rotated_y = local_x * angle_sin + local_y * angle_cos
+
+        local robot_x = origin[1] + rotated_x
+        local robot_y = origin[2] + rotated_y
+
+        return {robot_x, robot_y}
+    end
+end
+
+local InitialCoord = {219.13, -155.64, 0, 0}
+
+local BoardSquareA1 = {224.37, 97.78}
+local BoardSquareDist = {27.15055965898159, 26.954213572955865}
+local BoardRotRad = -1.5586942024430779
+local TransformBoardCoord = transform2d(BoardSquareA1, BoardSquareDist, BoardRotRad)
+local BoardHeight = -90.0
+
+local ReserveSquareA1 = {95.58, -238.95}
+local ReserveSquareDist = {-25.0, -25.0}
+local TransformReserveCoord = transform2d(ReserveSquareA1, ReserveSquareDist, 0)
+local ReserveHeight = -110
+
 
 -------------------------------------------- Movement  --------------------------------------------
 
-local _MAX_PIECES = {
+
+local _RESERVE_COUNT_MAX = {
     [-1] = 2,  -- white rook
-    [-2] = 2,  -- white bishop
-    [-3] = 2,  -- white knight
+    [-2] = 2,  -- white knight
+    [-3] = 2,  -- white bishop
     [-4] = 1,  -- white queen
     [-5] = 1,  -- white king
     [-6] = 8,  -- white pawn
     [-7] = 2,  -- black rook
-    [-8] = 2,  -- black bishop
-    [-9] = 2,  -- black knight
+    [-8] = 2,  -- black knight
+    [-9] = 2,  -- black bishop
     [-10] = 1, -- black queen
     [-11] = 1, -- black king
     [-12] = 8  -- black pawn
 }
 
-local _CAPTURED_PIECES_COUNT = {
+local _RESERVE_COUNT = {
     [-1] = 0,  -- white rook
-    [-2] = 0,  -- white bishop
-    [-3] = 0,  -- white knight
+    [-2] = 0,  -- white knight
+    [-3] = 0,  -- white bishop
     [-4] = 0,  -- white queen
     [-5] = 0,  -- white king
     [-6] = 0,  -- white pawn
     [-7] = 0,  -- black rook
-    [-8] = 0,  -- black bishop
-    [-9] = 0,  -- black knight
+    [-8] = 0,  -- black knight
+    [-9] = 0,  -- black bishop
     [-10] = 0, -- black queen
     [-11] = 0, -- black king
     [-12] = 0  -- black pawn
 }
 
+-- From board/reserve height 
+local LiftHeight = 30
+local PinVacuum = 8
+
 ---@param square integer
----@param offsetX integer
----@param offsetY integer
----@return Coordinate coordinate
-local function squareToCoord(square, offsetX, offsetY)
+---@return boolean validity
+local function isValidSquare(square)
+    return (square >= 0 and square <= 63) or _RESERVE_COUNT[square] ~= nil
+end
+
+
+---@param square integer
+---@return boolean validity
+local function isReserveSquare(square)
+    return _RESERVE_COUNT[square] ~= nil
+end
+
+
+local function resetCapturedPieces()
+    for key in pairs(_RESERVE_COUNT) do
+        _RESERVE_COUNT[key] = 0
+    end
+end
+
+
+---@param square integer
+---@param offset Point2D
+---@param reserve_index integer
+---@return Coordinate|nil coordinate
+local function squareToCoord(square, offset, reserve_index)
+    if isReserveSquare(square) then
+        -- Maps to one reserve box
+        -- 0 rook, 1 bishop, 2 knight, 3 queen, 4 king, 5 pawn
+        local piece = (math.abs(square)-1) % 6
+        local row, col
+        if piece == 5 then
+            row = 0
+            col = reserve_index
+        else
+            row = 1
+            -- Flip X axis if we want the second piece
+            col = 7 * reserve_index - piece
+        end
+        local coord2d = TransformReserveCoord(row, col, offset)
+        return {coord2d[1], coord2d[2], ReserveHeight, 0}
+    elseif isValidSquare(square) then
+        local row = square // 8
+        local col = square % 8
+        local coord2d = TransformBoardCoord(row, col, offset)
+        return {coord2d[1], coord2d[2], BoardHeight, 0}
+    end
+    return nil
 end
 
 
 ---@param originCoord Coordinate
 ---@param targetCoord Coordinate
----@return integer error
-local function relocate(originCoord, targetCoord)
-    return 1
+---@param liftHeight number
+local function executeMove(originCoord, targetCoord, liftHeight)
+    MovJ({coordinate = originCoord})
+
+    DO(PinVacuum, ON)
+    Wait(100)
+    Jump({coordinate = targetCoord}, {ZLimit=liftHeight})
+    DO(PinVacuum, OFF)
+    Wait(100)
+
+    Jump({coordinate = InitialCoord}, {ZLimit=liftHeight})
+    Sync()
 end
 
 
 ---@param originSquare integer
----@param offsetX integer
----@param offsetY integer
+---@param offset Point2D
 ---@param targetSquare integer
 ---@return integer error
-local function movePiece(originSquare, offsetX, offsetY, targetSquare)
-    -- TODO: Return to initial pose
-
+local function movePiece(originSquare, offset, targetSquare)
     -- Validation
-    if _CAPTURED_PIECES_COUNT[originSquare] ~= nil then
-        local count = _CAPTURED_PIECES_COUNT[originSquare]
+    if _RESERVE_COUNT[originSquare] ~= nil then
+        local count = _RESERVE_COUNT[originSquare]
         if count == 0 then
             print("Move - Origin square not enough pieces " .. originSquare)
             return 1
         end
     end
 
-    if _CAPTURED_PIECES_COUNT[targetSquare] ~= nil then
-        local count = _CAPTURED_PIECES_COUNT[targetSquare]
-        if (count + 1) > _MAX_PIECES[targetSquare] then
+    if _RESERVE_COUNT[targetSquare] ~= nil then
+        local count = _RESERVE_COUNT[targetSquare]
+        if (count + 1) > _RESERVE_COUNT_MAX[targetSquare] then
             print("Move - Target square cannot exceed maximum pieces " .. targetSquare)
             return 2
         end
     end
 
     -- Movement
-    local originCoord = squareToCoord(originSquare, offsetX, offsetY)
-    local targetCoord = squareToCoord(targetSquare, 0, 0)
+    local originCount = _RESERVE_COUNT[originSquare] or 0
+    local targetCount = _RESERVE_COUNT[targetSquare] or 0
 
-    local err = relocate(originCoord, targetCoord)
-    if err ~= 0 then
+    -- Take from previous square in reserve, index = count-1
+    local originCoord = squareToCoord(originSquare, offset, originCount-1)
+
+    -- Take from next square in reserve, index = count
+    local targetCoord = squareToCoord(targetSquare, {0, 0}, targetCount)
+
+    if not originCoord or not targetCoord then
+        print("Move - Invalid coordinate")
         return 3
     end
 
+    executeMove(originCoord, targetCoord, LiftHeight)
+
     -- Update
-    if _CAPTURED_PIECES_COUNT[originSquare] ~= nil then
-        local count = _CAPTURED_PIECES_COUNT[originSquare]
-        _CAPTURED_PIECES_COUNT[originSquare] = count - 1
+    if _RESERVE_COUNT[originSquare] ~= nil then
+        local count = _RESERVE_COUNT[originSquare]
+        _RESERVE_COUNT[originSquare] = count - 1
     end
 
-    if _CAPTURED_PIECES_COUNT[targetSquare] ~= nil then
-        local count = _CAPTURED_PIECES_COUNT[targetSquare]
-        _CAPTURED_PIECES_COUNT[targetSquare] = count + 1
+    if _RESERVE_COUNT[targetSquare] ~= nil then
+        local count = _RESERVE_COUNT[targetSquare]
+        _RESERVE_COUNT[targetSquare] = count + 1
     end
 
     return 0
 end
 
 
-local function resetCapturedPieces()
-    for key in pairs(_CAPTURED_PIECES_COUNT) do
-        _CAPTURED_PIECES_COUNT[key] = 0
-    end
-end
-
-
----@param square integer
----@return boolean validity
-local function isValidSquare(square)
-    return (square >= 0 and square <= 63) or _MAX_PIECES[square] ~= nil
-end
-
-
 -------------------------------------------- Command  --------------------------------------------
+
+
+---@param text string
+---@return integer|nil value
+local function toInteger(text)
+    local number = tonumber(text)
+    if number and math.floor(number) == number then
+        return number
+    end
+    return nil
+end
 
 
 ---@param input string
@@ -256,7 +347,7 @@ local function executeCommand(command)
         if err ~= 0 then
             return err
         end
-        return movePiece(originSquare, offsetX, offsetY, targetSquare)
+        return movePiece(originSquare, {offsetX, offsetY}, targetSquare)
     elseif operation == "reset" then
         resetCapturedPieces()
         return 0
@@ -277,6 +368,7 @@ end
 
 
 local function main()
+    MovJ({coordinate = InitialCoord})
     connectTCP()
 
     while true do
@@ -299,82 +391,4 @@ local function main()
     end
 end
 
-
---main()
-
---[[
-main_coord = {coordinate = {415, -90, -105, 0}}
-other_coord = {coordinate = {92, -261, -113, 0}}
-Option = {CP=100}
-
-MovJ({coordinate = main_coord}, Option)
-Sync()
-MovJ({coordinate = other_coord}, Option)
-Sync()
-
-Wait(1000)
-
-MovJ({coordinate = main_coord}, Option)
-Sync()
-MovJ({coordinate = other_coord}, Option)
-Sync()
-]]
-
---[[
-first_jump = {coordinate = {226, -94, -110, 0}}
-second_jump = {coordinate = {417, -94, -110, 0}}
-
-Jump(first_jump, {ZLimit=10})
-Jump(second_jump, {ZLimit=10})
-Sync()
-
-]]
-
-initial_pose = { 219.13, -155.64, 0, 0 }
-
-a1_real = { 224.37, 97.78, -90, 0 }
-h1_real = { 226.67, -92.26, -90, 0 }
-a8_real = { 413.05, 98.88, -90, 0 }
-rotation_angle = -89.31
-offsetX = -(h1_real[2] - a1_real[2]) / 7 -- board X is robot Y
-offsetY = (a8_real[1] - a1_real[1]) / 7  -- board Y is robot X
-
-captured_bottom_left = { 95.58, -238.95, -109.85, 0 }
-captured_bottom_right = { -80.28, -238.94, -109.85, 0 }
-captured_top_left = { 95.58, -264.26, -109.85, 0 }
-
-print(string.format("OffsetX: %.2f, OffsetY: %.2f", offsetX, offsetY))
-
-MovJ({ coordinate = a1_real })
-
-function calculate_coordinates(row, col)
-    -- Extract a1_real coordinates
-    local x0, y0 = a1_real[1], a1_real[2]
-
-    -- Convert rotation angle to radians
-    local theta = math.rad(rotation_angle)
-
-    -- Calculate the unrotated offsets
-    local dx = col * offsetX
-    local dy = row * offsetY
-
-    -- Apply the rotation transformation
-    local x = x0 + (dx * math.cos(theta)) - (dy * math.sin(theta))
-    local y = y0 + (dx * math.sin(theta)) + (dy * math.cos(theta))
-
-    return { x, y, a1_real[3], 0 }
-end
-
-for row = 0, 7 do
-    for col = 0, 7 do
-        -- Print the current row and column
-        print(string.format("Moving to Row: %d, Column: %d", row, col))
-
-        -- Calculate the coordinates for the current square
-        local coord = calculate_coordinates(row, col)
-
-        -- Move the robot to the calculated coordinates
-        MovJ({ coordinate = coord })
-        Sync()
-    end
-end
+main()
