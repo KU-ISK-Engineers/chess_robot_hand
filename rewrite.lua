@@ -261,7 +261,7 @@ local function parseMoveArgs(args)
     end
 
     if not (math.abs(offsetX) <= 100 and math.abs(offsetY) <= 100) then
-        print("Command move: Invalid offset range")
+        print("Command move: Invalid offset range, must be in [-100,100]")
         return 1, 0, 0, 0, 0
     end
 
