@@ -134,8 +134,8 @@ local PinOutVacuum = 8
 
 ---@param originCoord Coordinate
 ---@param targetCoord Coordinate
----@param moveIntermediate boolean
-local function executeMove(originCoord, targetCoord, moveIntermediate)
+---@param useMidPoint boolean
+local function executeMove(originCoord, targetCoord, useMidPoint)
     print(string.format("Move: Moving piece from (%f,%f) to (%f,%f)", originCoord[1], originCoord[2], targetCoord[1],
         targetCoord[2]))
     local lowerOriginCoord = RelPoint({ coordinate = originCoord }, { 0, 0, LiftHeight, 0 })
@@ -148,7 +148,7 @@ local function executeMove(originCoord, targetCoord, moveIntermediate)
 
     RelMovJ({ 0, 0, LiftHeight, 0 })
 
-    if moveIntermediate then
+    if useMidPoint then
         MovL({ coordinate = InitialCoord })
     end
 
@@ -172,21 +172,19 @@ end
 ---@param originSquare integer
 ---@param offset Point2D offsets in range [-1..1]
 ---@param targetSquare integer
----@return integer error
+---@return string|nil error
 local function movePiece(originSquare, offset, targetSquare)
     if _RESERVE_COUNT[originSquare] ~= nil then
         local count = _RESERVE_COUNT[originSquare]
         if count == 0 then
-            print("Cannot move: origin square not enough pieces " .. originSquare)
-            return 1
+            return "Cannot move: origin square not enough pieces " .. originSquare
         end
     end
 
     if _RESERVE_COUNT[targetSquare] ~= nil then
         local count = _RESERVE_COUNT[targetSquare]
         if (count + 1) > _RESERVE_COUNT_MAX[targetSquare] then
-            print("Cannot move: Target square cannot exceed maximum pieces " .. targetSquare)
-            return 2
+            return "Cannot move: Target square cannot exceed maximum pieces " .. targetSquare
         end
     end
 
@@ -200,15 +198,13 @@ local function movePiece(originSquare, offset, targetSquare)
     local targetCoord = squareToCoord(targetSquare, { 0, 0 }, targetCount)
 
     if not originCoord or not targetCoord then
-        print("Cannot move: Invalid coordinate")
-        return 3
+        return "Cannot move: Invalid coordinate"
     end
 
     print(string.format("Move: Moving piece from %d to %d", originSquare, targetSquare))
-    local moveIntermediate = xor(_RESERVE_COUNT[originSquare], _RESERVE_COUNT[targetSquare])
-    print(moveIntermediate)
+    local useMidPoint = xor(_RESERVE_COUNT[originSquare], _RESERVE_COUNT[targetSquare])
 
-    executeMove(originCoord, targetCoord, moveIntermediate)
+    executeMove(originCoord, targetCoord, useMidPoint)
 
     if _RESERVE_COUNT[originSquare] ~= nil then
         local count = _RESERVE_COUNT[originSquare]
@@ -220,7 +216,7 @@ local function movePiece(originSquare, offset, targetSquare)
         _RESERVE_COUNT[targetSquare] = count + 1
     end
 
-    return 0
+    return nil
 end
 
 
@@ -254,15 +250,15 @@ end
 
 
 ---@param args string[]
----@return integer error
+---@return string|nil error
 ---@return integer originSquare
 ---@return number offsetX offset X in range of [-1,1]
 ---@return number offsetY offset Y in range of [-1,1]
 ---@return integer targetSquare
 local function parseMoveArgs(args)
     if #args ~= 4 then
-        print("Command move: Argument mismatch: <origin square> <offset X> <offset Y> <target square>")
-        return 1, 0, 0, 0, 0
+        local err = "Command move: Argument mismatch: <origin square> <offset X> <offset Y> <target square>"
+        return err, 0, 0, 0, 0
     end
 
     local originSquare = toInteger(args[1])
@@ -271,48 +267,47 @@ local function parseMoveArgs(args)
     local targetSquare = toInteger(args[4])
 
     if not (originSquare and offsetX and offsetY and targetSquare) then
-        print("Command move: Arguments are not integers")
-        return 1, 0, 0, 0, 0
+        local err = "Command move: Arguments are not integers"
+        return err, 0, 0, 0, 0
     end
 
     if not (isValidSquare(originSquare) and isValidSquare(targetSquare)) then
-        print("Command move: Invalid square")
-        return 1, 0, 0, 0, 0
+        local err = "Command move: Invalid square"
+        return err, 0, 0, 0, 0
     end
 
     if not (math.abs(offsetX) <= 100 and math.abs(offsetY) <= 100) then
-        print("Command move: Invalid offset range, must be in [-100,100]")
-        return 1, 0, 0, 0, 0
+        local err = "Command move: Invalid offset range, must be in [-100,100]"
+        return err, 0, 0, 0, 0
     end
 
-    return 0, originSquare, offsetX / 100, offsetY / 100, targetSquare
+    return nil, originSquare, offsetX / 100, offsetY / 100, targetSquare
 end
 
 
 ---@param command string
----@return integer error
+---@return string|nil error
 local function executeCommand(command)
     local operation, args = parseArgs(command)
 
     if operation == "move" then
         local err, originSquare, offsetX, offsetY, targetSquare = parseMoveArgs(args)
-        if err ~= 0 then
+        if err ~= nil then
             return err
         end
         return movePiece(originSquare, { offsetX, offsetY }, targetSquare)
     elseif operation == "reset" then
         clearReserve()
-        return 0
+        return nil
     elseif operation == "ping" then
-        return 0
+        return nil
     end
 
     if not operation then
-        print("No operation specified")
+        return "No operation specified"
     else
-        print("Unknown operation = " .. operation)
+        return "Unknown operation = " .. operation
     end
-    return 1
 end
 
 
@@ -351,21 +346,20 @@ local function connectTCP()
 end
 
 
----@return integer error
 ---@return string|nil command
 local function readNextTCPCommand()
     if not _SOCKET then
-        return 1, nil
+        return nil
     end
 
     local err, result = TCPRead(_SOCKET, 0, 'string')
     if err ~= 0 or not result or not result.buf then
-        return 1, nil
+        return nil
     end
 
     local command = result.buf
     print("Read TCP command = " .. command)
-    return err, command
+    return command
 end
 
 
@@ -380,7 +374,7 @@ local function sendTCPResponse(response)
     if err ~= 0 then
         print("Failed sending response to TCP, response = " .. response)
     else
-        print("Successfully sent TCP response = " .. response)
+        print("Sent TCP response = " .. response)
     end
     return err
 end
@@ -400,16 +394,17 @@ local function main()
         local command, err
 
         while not command do
-            err, command = readNextTCPCommand()
-            if err ~= 0 or not command then
+            command = readNextTCPCommand()
+            if not command then
                 print("Failed reading command assuming socket closed, reconnecting...")
                 connectTCP()
             end
         end
 
         err = executeCommand(command)
-        if err ~= 0 then
-            sendTCPResponse("failure")
+        if err then
+            print("Failed executing command: " .. err)
+            sendTCPResponse("failure " .. err)
         else
             sendTCPResponse("success")
         end
