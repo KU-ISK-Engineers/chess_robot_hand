@@ -4,7 +4,7 @@
 -------------------------------------------- Coordinate  --------------------------------------------
 
 
---- Converts robot coordinate system to a 2D grid, based on origin point, 
+--- Converts robot coordinate system to a 2D grid, based on origin point,
 -- cell distances and rotation angle based on X axis
 ---@param origin Point2D
 ---@param square_distance Point2D
@@ -40,45 +40,33 @@ local BoardSquareA1 = { 224.37, 97.78 }
 local BoardSquareDist = { 27.15055965898159, 26.954213572955865 }
 local BoardRotRad = -1.5586942024430779
 local TransformBoardCoord = transform2d(BoardSquareA1, BoardSquareDist, BoardRotRad)
-local BoardLiftHeight = -90.0 -- Height required to take/put piece on a board
+local BoardLiftHeight = -110.0 -- Height required to take/put piece on a board
 
 local ReserveSquareA1 = { 95.58, -238.95 }
 local ReserveSquareDist = { -25.0, -25.0 }
 local TransformReserveCoord = transform2d(ReserveSquareA1, ReserveSquareDist, 0)
-local ReserveLiftHeight = -110 -- Height required to take/put piece of on reserve
+local ReserveLiftHeight = -115.0 -- Height required to take/put piece of on reserve
 
 
 -------------------------------------------- Square  --------------------------------------------
 
 
 local _RESERVE_COUNT_MAX = {
-    [-1] = 2,  -- white rook
-    [-2] = 2,  -- white knight
-    [-3] = 2,  -- white bishop
-    [-4] = 1,  -- white queen
-    [-5] = 1,  -- white king
-    [-6] = 8,  -- white pawn
-    [-7] = 2,  -- black rook
-    [-8] = 2,  -- black knight
-    [-9] = 2,  -- black bishop
-    [-10] = 1, -- black queen
-    [-11] = 1, -- black king
-    [-12] = 8  -- black pawn
+    [-1] = 2, -- white rook
+    [-2] = 2, -- white knight
+    [-3] = 2, -- white bishop
+    [-4] = 1, -- white queen
+    [-5] = 1, -- white king
+    [-6] = 8, -- white pawn
 }
 
 local _RESERVE_COUNT = {
-    [-1] = 0,  -- white rook
-    [-2] = 0,  -- white knight
-    [-3] = 0,  -- white bishop
-    [-4] = 0,  -- white queen
-    [-5] = 0,  -- white king
-    [-6] = 0,  -- white pawn
-    [-7] = 0,  -- black rook
-    [-8] = 0,  -- black knight
-    [-9] = 0,  -- black bishop
-    [-10] = 0, -- black queen
-    [-11] = 0, -- black king
-    [-12] = 0  -- black pawn
+    [-1] = 0, -- white rook
+    [-2] = 0, -- white knight
+    [-3] = 0, -- white bishop
+    [-4] = 0, -- white queen
+    [-5] = 0, -- white king
+    [-6] = 0, -- white pawn
 }
 
 
@@ -96,10 +84,11 @@ local function isReserveSquare(square)
 end
 
 
-local function resetCapturedPieces()
+local function clearReserve()
     for key in pairs(_RESERVE_COUNT) do
         _RESERVE_COUNT[key] = 0
     end
+    print("Cleared pieces reserve memory")
 end
 
 
@@ -119,7 +108,10 @@ local function squareToCoord(square, offset, reserve_index)
         else
             row = 1
             -- Flip X axis if we want the second piece
-            col = 7 * reserve_index - piece
+            col = piece
+            if reserve_index == 1 then
+                col = 7 - piece
+            end
         end
         local coord2d = TransformReserveCoord(row, col, offset)
         return { coord2d[1], coord2d[2], ReserveLiftHeight, 0 }
@@ -136,24 +128,44 @@ end
 -------------------------------------------- Movement  --------------------------------------------
 
 
-local LiftHeight = 30 -- Extra height for moving pieces across the board
+local LiftHeight = 40 -- Extra height for moving pieces across the board
 local PinOutVacuum = 8
 
 
 ---@param originCoord Coordinate
 ---@param targetCoord Coordinate
----@param liftHeight number
-local function executeMove(originCoord, targetCoord, liftHeight)
-    MovJ({ coordinate = originCoord })
+---@param moveIntermediate boolean
+local function executeMove(originCoord, targetCoord, moveIntermediate)
+    print(string.format("Move: Moving piece from (%f,%f) to (%f,%f)", originCoord[1], originCoord[2], targetCoord[1],
+        targetCoord[2]))
+    local lowerOriginCoord = RelPoint({ coordinate = originCoord }, { 0, 0, LiftHeight, 0 })
+    local lowerTargetCoord = RelPoint({ coordinate = targetCoord }, { 0, 0, LiftHeight, 0 })
+
+    MovJ(lowerOriginCoord)
+    RelMovJ({ 0, 0, -LiftHeight, 0 })
 
     DO(PinOutVacuum, ON)
-    Wait(100)
-    Jump({ coordinate = targetCoord }, { ZLimit = liftHeight })
-    DO(PinOutVacuum, OFF)
-    Wait(100)
 
-    Jump({ coordinate = InitialCoord }, { ZLimit = liftHeight })
+    RelMovJ({ 0, 0, LiftHeight, 0 })
+
+    if moveIntermediate then
+        MovL({ coordinate = InitialCoord })
+    end
+
+    MovJ(lowerTargetCoord)
+    RelMovJ({ 0, 0, -LiftHeight, 0 })
+
+    DO(PinOutVacuum, OFF)
+
+    RelMovJ({ 0, 0, LiftHeight, 0 })
+
+    MovL({ coordinate = InitialCoord })
     Sync()
+end
+
+
+local function xor(a, b)
+    return (a ~= nil) ~= (b ~= nil)
 end
 
 
@@ -192,8 +204,11 @@ local function movePiece(originSquare, offset, targetSquare)
         return 3
     end
 
-    print(string.format("Move: Moving piece from %s to %s", originSquare, targetSquare))
-    executeMove(originCoord, targetCoord, LiftHeight)
+    print(string.format("Move: Moving piece from %d to %d", originSquare, targetSquare))
+    local moveIntermediate = xor(_RESERVE_COUNT[originSquare], _RESERVE_COUNT[targetSquare])
+    print(moveIntermediate)
+
+    executeMove(originCoord, targetCoord, moveIntermediate)
 
     if _RESERVE_COUNT[originSquare] ~= nil then
         local count = _RESERVE_COUNT[originSquare]
@@ -228,7 +243,12 @@ end
 ---@return string[] args
 local function parseArgs(input)
     local command, args = input:match("^(%S+)%s*(.*)$")
-    local argsTable = { string.gmatch(args, "%S+")() }
+    local argsTable = {}
+
+    for arg in string.gmatch(args, "%S+") do
+        table.insert(argsTable, arg)
+    end
+
     return command, argsTable
 end
 
@@ -281,7 +301,7 @@ local function executeCommand(command)
         end
         return movePiece(originSquare, { offsetX, offsetY }, targetSquare)
     elseif operation == "reset" then
-        resetCapturedPieces()
+        clearReserve()
         return 0
     elseif operation == "ping" then
         return 0
