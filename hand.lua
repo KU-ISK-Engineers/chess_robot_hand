@@ -42,7 +42,7 @@ local BoardRotRad = -1.5586942024430779
 local TransformBoardCoord = transform2d(BoardSquareA1, BoardSquareDist, BoardRotRad)
 local BoardLiftHeight = -107.0 -- Height required to take/put piece on a board
 
-local ReserveSquareA1 = { 95.58, -238.95 }
+local ReserveSquareA1 = { 319.53, -237.25 }
 local ReserveSquareDist = { -25.0, -25.0 }
 local TransformReserveCoord = transform2d(ReserveSquareA1, ReserveSquareDist, 0)
 local ReserveLiftHeight = -115.0 -- Height required to take/put piece of on reserve
