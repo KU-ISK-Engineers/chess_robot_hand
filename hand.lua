@@ -36,8 +36,8 @@ end
 
 local InitialCoord = { 219.13, -155.64, 0, 0 }
 
-local BoardSquareA1 = { 224.37, 97.78 }
-local BoardSquareDist = { 27.15055965898159, 26.954213572955865 }
+local BoardSquareA1 = { 227.27, 97.78 }
+local BoardSquareDist = { 27.15055965898159, 26.80912151364939 }
 local BoardRotRad = -1.5586942024430779
 local TransformBoardCoord = transform2d(BoardSquareA1, BoardSquareDist, BoardRotRad)
 local BoardLiftHeight = -107.0 -- Height required to take/put piece on a board
